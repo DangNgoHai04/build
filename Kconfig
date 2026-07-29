@@ -33,7 +33,6 @@ config CROSS_COMPILE_KERNEL
 	string "Cross-compiler tool prefix for kernel"
 	default "aarch64-linux-gnu-" if TOOLCHAIN_GLIBC_ARM64
 	default "arm-linux-gnueabihf-" if TOOLCHAIN_GLIBC_ARM
-	default "arm-none-linux-musleabihf-" if TOOLCHAIN_MUSL_ARM
 	default "riscv64-unknown-linux-gnu-" if TOOLCHAIN_GLIBC_RISCV64
 	default "riscv64-unknown-linux-musl-" if TOOLCHAIN_MUSL_RISCV64
 	help
@@ -157,11 +156,6 @@ config TOOLCHAIN_UCLIBC_ARM
 	help
 	  uclibc library for arm(AARCH32).
 
-config TOOLCHAIN_MUSL_ARM
-	bool "musl library for user mode application on arm"
-	help
-	  musl library for arm(AARCH32).
-
 config TOOLCHAIN_GLIBC_RISCV64
 	bool "glibc library for user mode application on riscv64"
 	help
@@ -187,12 +181,18 @@ config CROSS_COMPILE_SDK
 	  Cross compile toolchain prefix for middleware.
 	  This will modify by TOOLCHAN_XLIBC
 
+config MW_VER
+	string
+	default "v1" if CHIP_ARCH_cv183x || CHIP_ARCH_cv182x
+	default "v2" if CHIP_ARCH_cv181x || CHIP_ARCH_cv180x || CHIP_ARCH_sg200x
+	help
+	  Set middleware version.
+
 config SDK_VER
 	string
 	default "64bit" if TOOLCHAIN_GLIBC_ARM64
 	default "32bit" if TOOLCHAIN_GLIBC_ARM
 	default "uclibc" if TOOLCHAIN_UCLIBC_ARM
-	default "musl" if TOOLCHAIN_MUSL_ARM
 	default "glibc_riscv64" if TOOLCHAIN_GLIBC_RISCV64
 	default "musl_riscv64" if TOOLCHAIN_MUSL_RISCV64
 	help
@@ -207,53 +207,6 @@ config STATIC
 	  Static binaries are larger, but do not require functioning
 	  dynamic libraries to be present, which is important if used
 	  as a system rescue tool.
-
-config SWITCH_32K_XTAL
-	bool "SWITCH 32K to external XTAL"
-	default n
-	help
-	  If you wish to use the on-board 32k crystal oscillator
-	  instead of the internal 32k clock of rtc_sys, please
-	  enable this feature. Once enabled, the BL2 code in the
-	  FSBL repository will perform the 32k clock source switching.
-
-config BUILD_FOR_DEBUG
-	bool "Build SDK with debug config"
-	default y
-	help
-	  This configuration is only valid for uboot and kernel.
-	  If you want to build SDK for release,please set BUILD_FOR_DEBUG=n.
-	  "y":build kernel with DEBUG config(such as CONFIG_DEBUG_FS,CONFIG_DEBUG_INFO)
-	      build uboot with commands(such as 'ping','echo','tftp').
-	  "n":build kernel with release config(disable CONFIG_DEBUG_FS and so on)
-	      build uboot without commands.
-
-menuconfig BUILD_FOR_FASTBOOT
-	bool "Build SDK with fastboot mode"
-	depends on !BUILD_FOR_DEBUG
-	default n
-
-if BUILD_FOR_FASTBOOT
-
-config FSBL_FASTBOOT
-	bool "optimization fsbl boottime"
-	default y
-
-config OPENSBI_FASTBOOT
-	bool "optimization opensbi boottime"
-	default y
-
-config UBOOT_FASTBOOT
-	bool "optimization uboot boottime"
-	default y
-	select UBOOT_SPL_CUSTOM
-
-config KERNEL_FASTBOOT
-	bool
-	default y
-
-endif # BUILD_FOR_FASTBOOT
-
 
 config ENABLE_SDK_ASAN
 	bool "Enable SDK sanitizer"
@@ -276,11 +229,9 @@ config FLASH_SIZE_SHRINK
 
 config CP_EXT_WIRELESS
 	bool "Install the osdrv/extdrv/wireless/*.ko"
-	depends on FLASH_SIZE_SHRINK
 	default n
 	help
-      Install the osdrv/extdrv/wireless/*.ko no matter
-	  FLASH_SIZE_SHRINK is set or not.
+          Install the osdrv/extdrv/wireless/*.ko no matter
 
 config NO_FB
 	bool "Do not compile frame buffer drivers"
@@ -314,16 +265,6 @@ config DDR_64MB_SIZE
 	bool "Compile 64MB DDR size project"
 	default n
 
-config AB_SYSTEM
-    bool "Enable ab system"
-    depends on !UBOOT_SPL_CUSTOM
-    default n
-    help
-      Enable A/B boot function.(Currently, spl boot is not supported.)
-      The BOOT and ROOTFS partitions are backed up to ensure that the
-      system can be automatically switched to the inactive partition
-      for boot if the related upgrade fails.
-      For details, see Android A/B system Description.
 endmenu
 
 menu "FIP setting"
@@ -333,14 +274,6 @@ config FSBL_SECURE_BOOT_SUPPORT
 	help
 	  "y" only build FSBL with authentication and decryption function.
 	  Still need to program eFuse to enable authentication or decryption.
-
-config FSBL_KEYS_DIR
-	string "FSBL keys directory"
-	depends on FSBL_SECURE_BOOT_SUPPORT
-	default "fsbl/plat/keys"
-	help
-	  Directory containing signing and encryption keys for FSBL FIP signing.
-	  Default is fsbl/plat/keys. Key filenames are fixed.
 
 choice
   prompt "Select Encryption Key of ATF"
@@ -373,52 +306,23 @@ config MULTI_FIP
 	help
 	  "y" Enable multi FIP binary support
 
-config FIP_V1
-    def_bool y
-    depends on CHIP_ARCH_cv183x || CHIP_ARCH_cv182x
-
 config FIP_V2
     def_bool y
-    depends on CHIP_ARCH_cv181x || CHIP_ARCH_cv180x
+    depends on CHIP_ARCH_cv181x || CHIP_ARCH_cv180x || CHIP_ARCH_sg200x
 
 config OD_CLK_SEL
 	bool "Select to build fip.bin with OD(overdrive) clock setting"
-	depends on CHIP_ARCH_cv181x || CHIP_ARCH_cv180x
+	depends on CHIP_ARCH_cv181x || CHIP_ARCH_cv180x || CHIP_ARCH_sg200x
 	default n
 	help
 	  "y" Select to build fip.bin with OD(overdrive) clock setting
 
 config VC_CLK_OVERDRIVE
 	bool "Select to build fip.bin with VC clock overdrived setting"
-	depends on !OD_CLK_SEL
+	depends on (CHIP_ARCH_cv181x || CHIP_ARCH_sg200x) && !OD_CLK_SEL
 	default n
 	help
 	  "y" Select to build fip.bin with VC clock overdrived setting
-
-menu "Burn Button Options"
-
-config ENABLE_BURN_BUTTON
-	bool "Enable burn button for update or not"
-	default n
-	depends on UBOOT_SPL_CUSTOM
-	help
-	  Enable burn button for update.
-
-config GPIO_GRP
-	int "from gpio0 to gpio4"
-	depends on ENABLE_BURN_BUTTON
-	default 1
-	help
-	  GPIO group number for button.
-
-config GPIO_PIN
-	int "GPIO pin number"
-	depends on ENABLE_BURN_BUTTON
-	default 3
-	help
-	  GPIO pin number for button.
-
-endmenu
 
 endmenu
 
@@ -459,28 +363,6 @@ config NANDFLASH_PAGESIZE
 	default 2048
 	help
 	  The page size of nand flash
-
-config SUP_LARGE_PART_SIZE
-	bool "Support large part size"
-	depends on STORAGE_TYPE_emmc || STORAGE_TYPE_sd
-	default n
-	help
-	  This config can make your flash part size large than 4GB
-
-config ENABLE_EMMC_SET_RESET_OTP
-	bool "Enable eMMC set OTP bit for hardware reset"
-	default N
-	depends on STORAGE_TYPE_emmc
-	help
-	  "y": The OTP bit: "RST_n_ENABLE" of this emmc chip will be permanently enabled
-
-config ENABLE_EMMC_HW_RESET_QFN
-	bool "Enable EMMC hardware reset for QFN"
-	default N
-	depends on STORAGE_TYPE_emmc && ENABLE_EMMC_SET_RESET_OTP
-	help
-		"y": Enable EMMC hardware reset for QFN (will use GPIOA_19(JTAG_CPU_TMS) to reset)
-		"n": Enable EMMC hardware reset for BGA (default)
 endmenu
 
 source "output/Kconfig.sensors"
@@ -577,7 +459,6 @@ endchoice
 
 config KERNEL_COMPRESS
 	string
-	default "none" if KERNEL_FASTBOOT
 	default "gzip" if KERNEL_GZIP
 	default "lzma" if KERNEL_LZMA
 	default "lz4" if KERNEL_LZ4
@@ -592,13 +473,6 @@ config SUSPEND
 		Allow the system to enter sleep states in which main memory is
 		powered and thus its contents are preserved, such as the
 		suspend-to-RAM state (e.g. the ACPI S3 state).
-
-config KERNEL_SECURE_BOOT
-	bool "Enable kernel secure boot"
-	default n
-	help
-	  Enable kernel secure boot.
-
 endmenu
 
 menu "ROOTFS options"
@@ -619,22 +493,16 @@ config ROOTFS_OVERLAYFS
 	  Enable rootfs with overlayfs.
 
 config BUILDROOT_FS
-	bool "Enable buildroot generate rootfs"
-	default n
-	help
-	  Enable buildroot generate rootfs.
+        bool "Enable buildroot generate rootfs"
+        default y
+        help
+          Enable buildroot generate rootfs.
 
 config USE_4K_ERASE_SIZE_FOR_JFFS2
 	bool "Use 4K erase size for jffs2 filesystem"
 	default n
 	help
 	  Enable use 4K erase size for jffs2 filesystem, it's only for nor flash
-
-config ROOTFS_RW
-	bool "Enable rootfs with rw"
-	default n
-	help
-	  Enable rootfs with rw.
 
 endmenu
 
@@ -672,7 +540,7 @@ config ENABLE_FASTBOOT0
 
 config ENABLE_FREERTOS
 	bool "Enable FREERTOS"
-	depends on CHIP_ARCH_cv181x || CHIP_ARCH_cv180x
+	depends on CHIP_ARCH_cv181x || CHIP_ARCH_cv180x || CHIP_ARCH_sg200x
 	default n
 	help
 	  Enable freertos.
@@ -701,55 +569,6 @@ config FAST_IMAGE_TYPE
 		E_FAST_JEPG : 1
 		E_FAST_H264 : 2
 		E_FAST_H265 : 3
-
-choice
-	prompt "Alios source selection"
-	default DISABLE_ALIOS
-	config DISABLE_ALIOS
-		bool "disable alios"
-		help
-			Disable alios update tool
-			We usually choose this configuration
-			This configuration is required to compile the boot kernel uboot
-			This configuration does not support alios upgrades
-	config ENABLE_ALIOS_UPDATE
-		bool "mars/phobos alios update"
-		help
-			Enable alios update tool
-			We don't usually choose this configuration
-			This configuration is required to compile the tools that update mars/phobos alios
-			This configuration does not support booting the kernel
-	config ENABLE_ALIOS
-		bool "mercury alios"
-		help
-			Enable mercury alios update tool
-			We don't usually choose this configuration
-			This configuration is required to compile the tools that update mercury alios
-			This configuration does not support booting the kernel
-endchoice
-
-config ALIOS_SOURCE
-	string
-	default "mars_alios" if ENABLE_ALIOS_UPDATE
-	default "alios" if ENABLE_ALIOS
-	default "" if DISABLE_ALIOS
-	help
-		Select build alios source.
-
-config ALIOS_SOLUTION
-	string
-	default "helloworld" if ENABLE_ALIOS_UPDATE
-	default "cv182x_helloworld" if ENABLE_ALIOS
-	default "" if DISABLE_ALIOS
-	help
-		Select solution to build alios.
-
-config ENABLE_RTT_UPDATE
-	bool "Enable rtt update"
-	depends on CHIP_ARCH_cv181x || CHIP_ARCH_cv180x
-	default n
-	help
-	  Enable rtt update.
 
 endmenu
 

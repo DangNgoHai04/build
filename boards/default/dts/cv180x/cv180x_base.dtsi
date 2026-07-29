@@ -150,10 +150,7 @@
 		resets = <&rst RST_WDT>;
 		clocks = <&pclk>;
 	};
-	trng: dw_trng@0x02070000 {
-		reg = <0x0 0x02070000 0x0 0x1000>;
-		compatible = "snps,dw-trng";
-	};
+
 	spacc: cvi_spacc@02060000 {
 		reg = <0x0 0x02060000 0x0 0x1000>;
 		compatible = "cvitek,spacc";
@@ -163,7 +160,7 @@
 		compatible = "cvitek,cvi-pwm";
 		reg = <0x0 0x3060000 0x0 0x1000>;
 		clocks = <&clk CV180X_CLK_PWM>;
-		#pwm-cells = <2>;
+		#pwm-cells = <1>;
 	};
 
 	pwm1: pwm@3061000 {
@@ -177,14 +174,14 @@
 		compatible = "cvitek,cvi-pwm";
 		reg = <0x0 0x3062000 0x0 0x1000>;
 		clocks = <&clk CV180X_CLK_PWM>;
-		#pwm-cells = <2>;
+		#pwm-cells = <3>;
 	};
 
 	pwm3: pwm@3063000 {
 		compatible = "cvitek,cvi-pwm";
 		reg = <0x0 0x3063000 0x0 0x1000>;
 		clocks = <&clk CV180X_CLK_PWM>;
-		#pwm-cells = <2>;
+		#pwm-cells = <4>;
 	};
 
 	pclk: pclk {
@@ -518,8 +515,6 @@
 		reset-names = "sdhci";
 		pll_index = <0x6>;
 		pll_reg = <0x3002070>;
-		clocks = <&clk CV180X_CLK_SD0>;
-		clock-names = "clk_sd";
 		cvi-cd-gpios = <&porta 13 GPIO_ACTIVE_LOW>;
 	};
 
@@ -536,8 +531,6 @@
 		non-removable;
 		pll_index = <0x7>;
 		pll_reg = <0x300207C>;
-		clocks = <&clk CV180X_CLK_SD1>;
-		clock-names = "clk_wifisd";
 		no-mmc;
 		no-sd;
 		status = "disabled";
@@ -553,21 +546,20 @@
 	i2s_subsys {
 		compatible = "cvitek,i2s_tdm_subsys";
 		reg = <0x0 0x04108000 0x0 0x100>;
-		clocks = <&clk CV180X_CLK_A0PLL>, <&clk CV180X_CLK_A24K>,
+		clocks = <&i2s_mclk>, <&clk CV180X_CLK_A0PLL>,
 			<&clk CV180X_CLK_SDMA_AUD0>, <&clk CV180X_CLK_SDMA_AUD1>,
 			<&clk CV180X_CLK_SDMA_AUD2>, <&clk CV180X_CLK_SDMA_AUD3>;
-		clock-names = "clk_a0pll", "clk_a24k",
+		clock-names = "i2sclk", "clk_a0pll",
 			"clk_sdma_aud0", "clk_sdma_aud1",
 			"clk_sdma_aud2", "clk_sdma_aud3";
 		master_base = <0x04110000>; /* I2S1 is master, only useful while using multi I2S IPs work on same IO */
-		default-freq = <24576000>;
 	};
 
 	i2s0: i2s@04100000 {
 		compatible = "cvitek,cv1835-i2s";
 		reg = <0x0 0x04100000 0x0 0x2000>;
-		clocks = <&clk CV180X_CLK_SDMA_AUD0>;
-		clock-names = "clk_sdma_aud0";
+		clocks = <&i2s_mclk 0>;
+		clock-names = "i2sclk";
 		dev-id = <0>;
 		#sound-dai-cells = <0>;
 		dmas = <&dmac 0 1 1>; /* read channel */
@@ -579,8 +571,8 @@
 	i2s1: i2s@04110000 {
 		compatible = "cvitek,cv1835-i2s";
 		reg = <0x0 0x04110000 0x0 0x2000>;
-		clocks = <&clk CV180X_CLK_SDMA_AUD1>;
-		clock-names = "clk_sdma_aud1";
+		clocks = <&i2s_mclk 0>;
+		clock-names = "i2sclk";
 		dev-id = <1>;
 		#sound-dai-cells = <0>;
 		dmas = <&dmac 2 1 1 /* read channel */
@@ -593,8 +585,8 @@
 	i2s2: i2s@04120000 {
 		compatible = "cvitek,cv1835-i2s";
 		reg = <0x0 0x04120000 0x0 0x2000>;
-		clocks = <&clk CV180X_CLK_SDMA_AUD2>;
-		clock-names = "clk_sdma_aud2";
+		clocks = <&i2s_mclk 0>;
+		clock-names = "i2sclk";
 		dev-id = <2>;
 		#sound-dai-cells = <0>;
 		dmas = <&dmac 6 1 1 /* read channel */
@@ -608,8 +600,8 @@
 	i2s3: i2s@04130000 {
 		compatible = "cvitek,cv1835-i2s";
 		reg = <0x0 0x04130000 0x0 0x2000>;
-		clocks = <&clk CV180X_CLK_SDMA_AUD3>;
-		clock-names = "clk_sdma_aud3";
+		clocks = <&i2s_mclk 0>;
+		clock-names = "i2sclk";
 		dev-id = <3>;
 		#sound-dai-cells = <0>;
 		dmas = <&dmac 7 1 1>; /* write channel */
@@ -621,16 +613,16 @@
 	adc: adc@0300A100 {
 		compatible = "cvitek,cv182xaadc";
 		reg = <0x0 0x0300A100 0x0 0x100>;
-		clocks = <&clk CV180X_CLK_SDMA_AUD3>;
-		clock-names = "clk_sdma_aud3";
+		clocks = <&i2s_mclk 0>;
+		clock-names = "i2sclk";
 		clk_source = <0x04130000>; /* MCLK source is I2S3 */
 	};
 
 	dac: dac@0300A000 {
 		compatible = "cvitek,cv182xadac";
 		reg = <0x0 0x0300A000 0x0 0x100>;
-		clocks = <&clk CV180X_CLK_SDMA_AUD3>;
-		clock-names = "clk_sdma_aud3";
+		clocks = <&i2s_mclk 0>;
+		clock-names = "i2sclk";
 	};
 
 	pdm: pdm@0x041D0C00 {
@@ -823,18 +815,6 @@
 		#thermal-sensor-cells = <1>;
 	};
 
-#if 0
-	cv182x_cooling:cv182x_cooling {
-		clocks = <&clk CV180X_CLK_A53>, <&clk CV180X_CLK_TPU>;
-		clock-names = "clk_a53", "clk_tpu_axi";
-		dev-freqs = <1000000000 750000000>,
-			<500000000 375000000>,
-			<500000000 100000000>;
-		compatible = "cvitek,cv182x-cooling";
-		#cooling-cells = <2>;
-	};
-#endif
-
 	thermal-zones {
 		soc_thermal_0: soc_thermal_0 {
 			polling-delay-passive = <1000>; /* milliseconds */
@@ -866,6 +846,16 @@
 	cviaudio_core {
 		compatible = "cvitek,audio";
 	};
+
+	audio_clock: audio_clock {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+#if 0
+		clock-frequency = <12288000>;
+#else
+		clock-frequency = <24576000>;
+#endif
+		};
 
 	cvipctrl: pinctrl@3001000 {
 		compatible = "cvitek,pinctrl-cv180x";
@@ -899,3 +889,4 @@
 		};
 	};
 };
+

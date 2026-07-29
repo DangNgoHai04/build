@@ -22,7 +22,7 @@
 #include "cv181x_base.dtsi"
 
 / {
-	model = "Cvitek. CV181X ASIC. C906.";
+	model = "SOPHGO ASIC. C906.";
 
 	#size-cells = <0x2>;
 	#address-cells = <0x2>;
@@ -31,9 +31,9 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		timebase-frequency = <25000000>;
-		u-boot,dm-spl;
+
 		cpu-map {
-			u-boot,dm-spl;
+
 			cluster0 {
 
 				core0 {
@@ -43,7 +43,6 @@
 		};
 
 		cpu0: cpu@0 {
-			u-boot,dm-spl;
 			device_type = "cpu";
 			reg = <0x00>;
 			status = "okay";
@@ -87,13 +86,13 @@
 
 	};
 
-	cv181x_cooling:cv181x_cooling {
+	cooling:cooling {
 		clocks = <&clk CV181X_CLK_C906_0>, <&clk CV181X_CLK_TPU>;
 		clock-names = "clk_cpu", "clk_tpu_axi";
 		dev-freqs = <850000000 500000000>,
 			<425000000 375000000>,
 			<425000000 300000000>;
-		compatible = "cvitek,cv181x-cooling";
+		compatible = "sophgo,cooling";
 		#cooling-cells = <2>;
 	};
 
@@ -147,10 +146,7 @@
 	watchdog0: cv-wd@0x3010000 {
 		interrupts = <58 IRQ_TYPE_LEVEL_HIGH>;
 	};
-	trng: dw_trng@0x02070000 {
-		reg = <0x0 0x02070000 0x0 0x1000>;
-		compatible = "snps,dw-trng";
-	};
+
 	spacc: cvi_spacc@02060000 {
 		interrupts = <91 IRQ_TYPE_LEVEL_HIGH>;
 		interrupt-parent = <&plic0>;

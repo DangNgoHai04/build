@@ -31,6 +31,7 @@ qstrip = $(strip $(subst ",,$(1)))
 # Default actions
 ################################################################################
 NPROC := $(shell nproc)
+
 export CHIP_ARCH_L := $(shell echo $(CHIP_ARCH) | tr A-Z a-z)
 export BORAD_FOLDER_PATH := ${BUILD_PATH}/boards/${CHIP_ARCH_L}/${PROJECT_FULLNAME}
 
@@ -75,14 +76,10 @@ endif
 # u-boot targets
 ################################################################################
 # configure uboot defconfig
-ifeq ($(CONFIG_BUILD_FOR_DEBUG),y)
-UBOOT_CONFIG_NAME := ${BRAND}_${PROJECT_FULLNAME}_defconfig
-else
-UBOOT_CONFIG_NAME := ${BRAND}_${PROJECT_FULLNAME}_rls_defconfig
-endif
+UBOOT_CONFIG_NAME := ${PROJECT_CONFIG_FULLNAME}_defconfig
 
 ifeq ($(CONFIG_UBOOT_SPL_CUSTOM),y)
-UBOOT-SPL_CONFIG_NAME := ${BRAND}_${PROJECT_FULLNAME}_spl_defconfig
+UBOOT-SPL_CONFIG_NAME := ${PROJECT_CONFIG_FULLNAME}_spl_defconfig
 endif
 
 ifeq (${RELEASE_VERSION},1)
@@ -146,28 +143,15 @@ endif
 
 UBOOT_CVI_BOARD_INIT_PATH := ${UBOOT_PATH}/board/cvitek/cvi_board_init.c
 UBOOT_CVITEK_PATH := ${UBOOT_PATH}/include/cvitek/cvitek.h
-ifeq ($(CONFIG_BOOT_IMAGE_SINGLE_DTB), y)
-	BOARD_DTS_SEARCH_PATH = ${BUILD_PATH}/boards/${CHIP_ARCH_L}/${PROJECT_FULLNAME}
-else
-	BOARD_DTS_SEARCH_PATH = ${BUILD_PATH}/boards/${CHIP_ARCH_L}
-endif
 
 u-boo%: export KBUILD_OUTPUT=${UBOOT_PATH}/${UBOOT_OUTPUT_FOLDER}
-ifeq ($(CONFIG_UBOOT_FASTBOOT),y)
-u-boo%: export RELEASE=1
-u-boo%: export CONFIG_UBOOT_FASTBOOT:=${CONFIG_UBOOT_FASTBOOT}
-else
 u-boo%: export RELEASE=${RELEASE_VERSION}
-endif
 u-boo%: export CVIBOARD=${BOARD}
 u-boo%: export CONFIG_SKIP_RAMDISK:=${CONFIG_SKIP_RAMDISK}
-u-boo%: export CONFIG_ENABLE_EMMC_HW_RESET_QFN:=${CONFIG_ENABLE_EMMC_HW_RESET_QFN}
-u-boo%: export CONFIG_ENABLE_EMMC_SET_RESET_OTP:=${CONFIG_ENABLE_EMMC_SET_RESET_OTP}
 u-boo%: export CONFIG_USE_DEFAULT_ENV:=${CONFIG_USE_DEFAULT_ENV}
 u-boo%: export MULTI_FIP=$(if ${CONFIG_MULTI_FIP},1,0)
 u-boo%: export CROSS_COMPILE=$(patsubst "%",%,$(CONFIG_CROSS_COMPILE))
 u-boo%: export ARCH=$(patsubst "%",%,$(CONFIG_ARCH))
-u-boo%: export CONFIG_SUP_LARGE_PART_SIZE=${SUP_LARGE_PART_SIZE}
 
 u-boot-menuconfig: ${UBOOT_OUTPUT_CONFIG_PATH}
 	$(call print_target)
@@ -179,12 +163,12 @@ u-boot-dts:
 ifeq ($(UBOOT_SRC), u-boot-2021.10)
 # U-boot doesn't has arch/arm64
 ifeq ($(ARCH), arm64)
-	${Q}find ${BOARD_DTS_SEARCH_PATH}  \
+	${Q}find ${BUILD_PATH}/boards/${CHIP_ARCH_L} \
 		\( -path "*linux/*.dts*" -o -path "*dts_${ARCH}/*.dts*" \) \
 		-exec cp {} ${UBOOT_PATH}/arch/arm/dts/ \;
 	${Q}find ${DTS_DEFATUL_PATHS} -name *.dts* -exec cp {} ${UBOOT_PATH}/arch/arm/dts/ \;
 else
-	${Q}find ${BOARD_DTS_SEARCH_PATH}  \
+	${Q}find ${BUILD_PATH}/boards/${CHIP_ARCH_L} \
 		\( -path "*linux/*.dts*" -o -path "*dts_${ARCH}/*.dts*" \) \
 		-exec cp {} ${UBOOT_PATH}/arch/${ARCH}/dts/ \;
 	${Q}find ${DTS_DEFATUL_PATHS} -name *.dts* -exec cp {} ${UBOOT_PATH}/arch/${ARCH}/dts/ \;
@@ -225,15 +209,7 @@ u-boot-clean:
 # kernel targets
 ################################################################################
 # configure kernel defconfig
-ifeq ($(CONFIG_BUILD_FOR_DEBUG),y)
-KERNEL_CONFIG_NAME := ${BRAND}_${PROJECT_FULLNAME}_defconfig
-else
-ifeq ($(CONFIG_KERNEL_FASTBOOT),y)
-KERNEL_CONFIG_NAME := ${BRAND}_${PROJECT_FULLNAME}_fastboot_defconfig
-else
-KERNEL_CONFIG_NAME := ${BRAND}_${PROJECT_FULLNAME}_rls_defconfig
-endif
-endif
+KERNEL_CONFIG_NAME := ${PROJECT_CONFIG_FULLNAME}_defconfig
 
 KERNEL_VERSION ?= -tag-$(shell git -C ${KERNEL_PATH} describe --exact-match HEAD 2>/dev/null)
 
@@ -252,20 +228,19 @@ define copy_ko_action
 	${Q}find ${1} -name '*.ko' -exec cp -f {} ${SYSTEM_OUT_DIR}/ko/ \;
 endef
 
-ifeq ($(CHIP_ARCH),$(filter $(CHIP_ARCH),CV181X CV180X ATHENA2))
+ifeq ($(CHIP_ARCH),$(filter $(CHIP_ARCH),CV181X CV180X SG200X))
 define copy_header_action
-	${Q}cp -r ${OSDRV_PATH}/interdrv/include/chip/$(shell echo $(CHIP_ARCH) | tr A-Z a-z)/uapi/linux/* ${1}/linux/
-	${Q}cp -r ${OSDRV_PATH}/interdrv/include/common/uapi/linux/* ${1}/linux/
+	${Q}cp -r ${INTERDRV_PATH}/include/chip/$(shell echo $(CHIP_CODE) | tr A-Z a-z)/uapi/linux/* ${1}/linux/
+	${Q}cp -r ${INTERDRV_PATH}/include/common/uapi/linux/* ${1}/linux/
 	${Q}cp ${KERNEL_PATH}/drivers/staging/android/uapi/ion.h ${1}/linux/
 	${Q}cp ${KERNEL_PATH}/drivers/staging/android/uapi/ion_cvitek.h ${1}/linux/
 	${Q}cp ${KERNEL_PATH}/include/uapi/linux/dma-buf.h ${1}/linux/
 endef
 else
 define copy_header_action
-	${Q}cp -r ${OSDRV_PATH}/interdrv/vip/chip/$(shell echo $(CHIP_ARCH) | tr A-Z a-z)/uapi/* ${1}/linux/
-	${Q}cp -r ${OSDRV_PATH}/interdrv/base/uapi/* ${1}/linux/
-	${Q}cp -r ${OSDRV_PATH}/interdrv/include/uapi/* ${1}/linux/
-	${Q}cp ${OSDRV_PATH}/interdrv/usb/gadget/function/f_cvg.h ${1}/linux/
+	${Q}cp -r ${INTERDRV_PATH}/vip/chip/$(shell echo $(CHIP_CODE) | tr A-Z a-z)/uapi/* ${1}/linux/
+	${Q}cp -r ${INTERDRV_PATH}/base/uapi/* ${1}/linux/
+	${Q}cp -r ${INTERDRV_PATH}/include/uapi/* ${1}/linux/
 	${Q}cp ${KERNEL_PATH}/drivers/staging/android/uapi/ion.h ${1}/linux/
 	${Q}cp ${KERNEL_PATH}/drivers/staging/android/uapi/ion_cvitek.h ${1}/linux/
 	${Q}cp ${KERNEL_PATH}/include/uapi/linux/dma-buf.h ${1}/linux/
@@ -317,10 +292,6 @@ ifneq (${CONFIG_SUSPEND},y)
 	${Q}$(MAKE) -j${NPROC} -C ${KERNEL_PATH} O=${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER} setconfig 'SCRIPT_ARG="SUSPEND=n"'
 	${Q}$(MAKE) -j${NPROC} -C ${KERNEL_PATH} O=${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER} savedefconfig
 endif
-ifeq (${CONFIG_ENABLE_EMMC_HW_RESET_QFN},y)
-	${Q}$(MAKE) -j${NPROC} -C ${KERNEL_PATH} O=${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER} setconfig 'SCRIPT_ARG="ENABLE_EMMC_HW_RESET_QFN=y"'
-	${Q}$(MAKE) -j${NPROC} -C ${KERNEL_PATH} O=${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER} savedefconfig
-endif
 	${Q}$(MAKE) -j${NPROC} -C ${KERNEL_PATH} O=${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER} olddefconfig
 	${Q}$(MAKE) -j${NPROC} -C ${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER} Image modules
 	${Q}$(MAKE) -j${NPROC} -C ${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER} modules_install headers_install INSTALL_HDR_PATH=${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER}/$(ARCH)/usr
@@ -341,7 +312,7 @@ kernel-dts: ${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER}
 	${Q}ln -snrf ${CVI_BOARD_MEMMAP_H_PATH} ${KERNEL_PATH}/scripts/dtc/include-prefixes/
 	${Q}find ${KERNEL_PATH}/arch/${ARCH}/boot/dts/${BRAND}/ -type l -delete
 	${Q}find ${DTS_DEFATUL_PATHS} -name *.dts* -exec ln -sf {} ${KERNEL_PATH}/arch/${ARCH}/boot/dts/${BRAND}/ \;
-	${Q}find ${BOARD_DTS_SEARCH_PATH} \
+	${Q}find ${BUILD_PATH}/boards/${CHIP_ARCH_L} \
 		\( -path "*linux/*.dts*" -o -path "*dts_${ARCH}/*.dts*" \) \
 		-exec ln -sf {} ${KERNEL_PATH}/arch/${ARCH}/boot/dts/${BRAND}/ \;
 	${Q}$(MAKE) -j${NPROC} -C ${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER} dtbs
@@ -371,8 +342,6 @@ else ifeq ($(CONFIG_TOOLCHAIN_GLIBC_RISCV64),y)
 INITRAMFS_BASE := glibc_riscv64
 else ifeq ($(CONFIG_TOOLCHAIN_MUSL_RISCV64),y)
 INITRAMFS_BASE := musl_riscv64
-else ifeq ($(CONFIG_TOOLCHAIN_MUSL_ARM),y)
-INITRAMFS_BASE := musl_arm
 endif
 
 $(RAMDISK_PATH)/$(RAMDISK_OUTPUT_BASE)/target:
@@ -403,7 +372,7 @@ endif
 
 define gen_cpio
 	cd $(RAMDISK_PATH)/$(RAMDISK_OUTPUT_FOLDER);\
-	$(COMMON_TOOLS_PATH)/gen_init_cpio $(RAMDISK_PATH)/$(RAMDISK_OUTPUT_FOLDER)/../configs/$(1) > $(RAMDISK_PATH)/$(RAMDISK_OUTPUT_FOLDER)/boot.cpio
+	${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER}/usr/gen_init_cpio $(RAMDISK_PATH)/$(RAMDISK_OUTPUT_FOLDER)/../configs/$(1) > $(RAMDISK_PATH)/$(RAMDISK_OUTPUT_FOLDER)/boot.cpio
 endef
 
 BOOT_IMAGE_ARG :=
@@ -426,14 +395,11 @@ else
 	$(call gen_cpio,onekernel_fixed_files.txt.sqsh)
 endif
 	# copy multi.its for *.itb layout
-ifeq ($(CONFIG_KERNEL_SECURE_BOOT),y)
-	${Q}cp -f "${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/../configs/multi_sign.its" "${BUILD_PATH}/output/multi.its.tmp"
-else
 	${Q}cp -f "${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/../configs/multi.its" "${BUILD_PATH}/output/multi.its.tmp"
-endif
+
 	${Q}python3 "${BUILD_PATH}/scripts/boards_scan.py" ${BOOT_IMAGE_ARG}
 	${Q}mv "${BUILD_PATH}/output/multi.its.tmp" "${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its"
-ifneq ($(CONFIG_KERNEL_UNCOMPRESSED)$(CONFIG_KERNEL_FASTBOOT), )
+ifeq ($(CONFIG_KERNEL_UNCOMPRESSED),y)
 	${Q}sed -i "s/data = \/incbin\/(\".\/Image.gz\");/data = \/incbin\/(\".\/Image\");/g" ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
 else
 	${Q}${KERNEL_COMPRESS} -c -9 -f -k ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/Image > ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/Image.${KERNEL_COMPRESS}
@@ -442,7 +408,7 @@ endif
 	${Q}sed -i "s/compression = \"gzip\";/compression = \"${KERNEL_COMPRESS}\";/" ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
 	${Q}gzip -9 -f -k ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/boot.cpio > ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/boot.cpio.gz
 ifeq ($(CONFIG_SKIP_RAMDISK),y)
-	${Q}sed -i '/ramdisk-1 {/,/\/\*FDT\*\//{/\/\*FDT\*\//!d;}' ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
+	${Q}sed -ie '26,38d' ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
 else
 	${Q}sed -i "s/data = \/incbin\/(\".\/rootfs.cpio.gz\");/data = \/incbin\/(\".\/boot.cpio.gz\");/g" ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
 endif
@@ -451,17 +417,13 @@ ifeq ($(CONFIG_KERNEL_ENTRY_HACK),y)
 	${Q}sed -i "s/load = <0x0 0x.*>;/load = <0x0 $(CONFIG_KERNEL_ENTRY_HACK_ADDR)>;/g" ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
 	${Q}sed -i "s/entry = <0x0 0x.*>;/entry = <0x0 $(CONFIG_KERNEL_ENTRY_HACK_ADDR)>;/g" ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
 endif
-	$(COMMON_TOOLS_PATH)/prebuild/mkimage -f ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its -k $(RAMDISK_PATH)/keys -r ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/boot.itb
+	LD_LIBRARY_PATH=${TOPDIR}/host ${UBOOT_PATH}/${UBOOT_OUTPUT_FOLDER}/tools/mkimage -f ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its -k $(RAMDISK_PATH)/keys -r ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/boot.itb
 
 ramboot: kernel-dts
 	$(call print_target)
 	$(call gen_cpio,ramboot_fixed_files.txt)
 	# copy multi.its for *.itb layout
-ifeq ($(CONFIG_KERNEL_SECURE_BOOT),y)
-	${Q}cp -f "${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/../configs/multi_sign.its" "${BUILD_PATH}/output/multi.its.tmp"
-else
 	${Q}cp -f "${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/../configs/multi.its" "${BUILD_PATH}/output/multi.its.tmp"
-endif
 	${Q}python3 "${BUILD_PATH}/scripts/boards_scan.py" --gen_single_board_its --chip_name "${CHIP}" --board_name "${BOARD}"
 	${Q}mv "${BUILD_PATH}/output/multi.its.tmp" "${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its"
 	${Q}gzip -9 -f -k ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/Image > ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/Image.gz
@@ -472,7 +434,7 @@ ifeq ($(CONFIG_KERNEL_ENTRY_HACK),y)
 	${Q}sed -i "s/load = <0x0 0x.*>;/load = <0x0 $(CONFIG_KERNEL_ENTRY_HACK_ADDR)>;/g" ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
 	${Q}sed -i "s/entry = <0x0 0x.*>;/entry = <0x0 $(CONFIG_KERNEL_ENTRY_HACK_ADDR)>;/g" ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its
 endif
-	$(COMMON_TOOLS_PATH)/prebuild/mkimage -f ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its -k $(RAMDISK_PATH)/keys -r $(OUTPUT_DIR)/ramboot.itb
+	${UBOOT_PATH}/${UBOOT_OUTPUT_FOLDER}/tools/mkimage -f ${RAMDISK_PATH}/${RAMDISK_OUTPUT_FOLDER}/multi.its -k $(RAMDISK_PATH)/keys -r $(OUTPUT_DIR)/ramboot.itb
 
 kernel-clean:
 	$(call print_target)
@@ -480,6 +442,7 @@ kernel-clean:
 	${Q}$(if $(wildcard ${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER}), rm -rf ${KERNEL_PATH}/${KERNEL_OUTPUT_FOLDER},)
 	${Q}rm -f  ${OUTPUT_DIR}/elf/vmlinux
 	${Q}$(if $(wildcard ${SYSTEM_OUT_DIR}/ko/kernel), rm -rf ${SYSTEM_OUT_DIR}/ko/kernel,)
+	${Q}find ${KERNEL_PATH}/arch/${ARCH}/boot/dts/${BRAND}/ -name "*.dts*" -type l -exec rm -rf {} \;
 
 ifeq ($(CONFIG_TOOLCHAIN_GLIBC_ARM64),y)
 packages_arch := arm64
@@ -487,8 +450,6 @@ else ifeq ($(CONFIG_TOOLCHAIN_GLIBC_ARM),y)
 packages_arch := arm
 else ifeq ($(CONFIG_TOOLCHAIN_UCLIBC_ARM),y)
 packages_arch := uclibc
-else ifeq ($(CONFIG_TOOLCHAIN_MUSL_ARM),y)
-packages_arch := musl
 else ifeq ($(CONFIG_TOOLCHAIN_GLIBC_RISCV64),y)
 packages_arch := glibc_riscv64
 else ifeq ($(CONFIG_TOOLCHAIN_MUSL_RISCV64),y)
@@ -549,36 +510,6 @@ endif
 $(OUTPUT_DIR)/rawimages:
 	${Q}mkdir -p $@
 
-
-# Pack_image
-# Description: Macro for packing image
-# Parameters 1: partition label
-# Parameters 2: Folder path for pack
-# Parameters 3: Size for packing (for make_ext4fs)
-ifeq (${STORAGE_TYPE},spinand)
-define pack_image
-	${Q}python3 $(COMMON_TOOLS_PATH)/spinand_tool/mkubiimg.py $(FLASH_PARTITION_XML) $(shell echo ${1} | tr  '[:lower:]' '[:upper:]') ${2} $(OUTPUT_DIR)/rawimages/${1}.spinand -b $(CONFIG_NANDFLASH_BLOCKSIZE) -p $(CONFIG_NANDFLASH_PAGESIZE)
-endef
-else ifeq (${STORAGE_TYPE},emmc)
-define pack_image
-	${Q}$(COMMON_TOOLS_PATH)/prebuild/make_ext4fs -l ${3}  -L $(shell echo ${1} | tr  '[:lower:]' '[:upper:]') $(OUTPUT_DIR)/rawimages/${1}.emmc ${2}
-	resize2fs -M $(OUTPUT_DIR)/rawimages/${1}.emmc
-endef
-else ifeq (${STORAGE_TYPE},sd)
-define pack_image
-	${Q}$(COMMON_TOOLS_PATH)/prebuild/make_ext4fs -l ${3}  -L $(shell echo ${1} | tr  '[:lower:]' '[:upper:]') $(OUTPUT_DIR)/rawimages/${1}.sd ${2}
-	resize2fs -M $(OUTPUT_DIR)/rawimages/${1}.sd
-endef
-else ifeq (${STORAGE_TYPE},spinor)
-# TODO:
-define pack_image
-endef
-else
-define pack_image
-	$(error Unknown STORAGE_TYPE ${STORAGE_TYPE})
-endef
-endif
-
 rootfs-pack:export CROSS_COMPILE_KERNEL=$(patsubst "%",%,$(CONFIG_CROSS_COMPILE_KERNEL))
 rootfs-pack:export CROSS_COMPILE_SDK=$(patsubst "%",%,$(CONFIG_CROSS_COMPILE_SDK))
 rootfs-pack:$(OUTPUT_DIR)/rawimages
@@ -593,43 +524,43 @@ endif
 	${Q}find $(ROOTFS_DIR) -name "*.ko" -type f -printf 'striping %p\n' -exec $(CROSS_COMPILE_KERNEL)strip --strip-unneeded {} \;
 	${Q}find $(ROOTFS_DIR) -name "*.so*" -type f -printf 'striping %p\n' -exec $(CROSS_COMPILE_SDK)strip --strip-all {} \;
 	${Q}find $(ROOTFS_DIR) -executable -type f ! -name "*.sh" ! -path "*etc*" ! -path "*.ko" -printf 'striping %p\n' -exec $(CROSS_COMPILE_SDK)strip --strip-all {} 2>/dev/null \;
-
-ifeq (${CONFIG_ROOTFS_RW},y)
-	$(call pack_image,rootfs,$(ROOTFS_DIR),71M)
-else
-
 ifeq ($(STORAGE_TYPE),spinor)
 	${Q}mksquashfs $(ROOTFS_DIR) $(OUTPUT_DIR)/rawimages/rootfs.sqsh -root-owned -comp xz
 else
 	${Q}mksquashfs $(ROOTFS_DIR) $(OUTPUT_DIR)/rawimages/rootfs.sqsh -root-owned -comp xz -e mnt/cfg/*
 endif
 ifeq ($(STORAGE_TYPE),spinand)
-	${Q}python3 $(COMMON_TOOLS_PATH)/spinand_tool/mkubiimg.py --ubionly $(FLASH_PARTITION_XML) ROOTFS $(OUTPUT_DIR)/rawimages/rootfs.sqsh $(OUTPUT_DIR)/rawimages/rootfs.spinand -b $(CONFIG_NANDFLASH_BLOCKSIZE) -p $(CONFIG_NANDFLASH_PAGESIZE)
+	${Q}python3 $(COMMON_TOOLS_PATH)/spinand_tool/mkubiimg.py --ubionly $(FLASH_PARTITION_XML) ROOTFS $(OUTPUT_DIR)/rawimages/rootfs.sqsh $(OUTPUT_DIR)/rawimages/rootfs.spinand -b $(CONFIG_NANDFLASH_BLOCKSIZE) -p $(CONFIG_NANDFLASH_PAGESIZE) --mkfs $(BR_OUTPUT_DIR)/host/sbin/mkfs.ubifs --ubinize $(BR_OUTPUT_DIR)/host/sbin/ubinize
 	${Q}rm $(OUTPUT_DIR)/rawimages/rootfs.sqsh
 else
 	${Q}mv $(OUTPUT_DIR)/rawimages/rootfs.sqsh $(OUTPUT_DIR)/rawimages/rootfs.$(STORAGE_TYPE)
-endif
-
 endif
 
 define raw2cimg
 	${Q}python3 $(COMMON_TOOLS_PATH)/image_tool/raw2cimg.py $(OUTPUT_DIR)/rawimages/${1} $(OUTPUT_DIR) $(FLASH_PARTITION_XML)
 endef
 
-define raw2cimg_lps
-	${Q}python3 $(COMMON_TOOLS_PATH)/image_tool/raw2cimg_lps.py $(OUTPUT_DIR)/rawimages/${1} $(OUTPUT_DIR) $(FLASH_PARTITION_XML)
-endef
 
+BR_PROJECT_OVERLAY_PATH := ${BUILD_PATH}/boards/${CHIP_ARCH_L}/${PROJECT_FULLNAME}/buildroot/overlay
 
 # BR_OVERLAY_DIR
 # BR_ROOTFS_RAWIMAGE
 br-rootfs-prepare:export CROSS_COMPILE_KERNEL=$(patsubst "%",%,$(CONFIG_CROSS_COMPILE_KERNEL))
 br-rootfs-prepare:export CROSS_COMPILE_SDK=$(patsubst "%",%,$(CONFIG_CROSS_COMPILE_SDK))
+br-rootfs-prepare:export TPU_SDK_INSTALL_PATH="${TPU_OUTPUT_PATH}"/cvitek_tpu_sdk
 br-rootfs-prepare:
 	$(call print_target)
+	# copy init scripts
+	${Q}mkdir -p $(BR_OVERLAY_DIR)/etc/init.d
+	${Q}[ ! -e $(BR_PROJECT_OVERLAY_PATH)/etc/init.d ] || cp -arf $(BR_PROJECT_OVERLAY_PATH)/etc/init.d/* $(BR_OVERLAY_DIR)/etc/init.d/
 	# copy ko and mmf libs
 	${Q}mkdir -p $(BR_OVERLAY_DIR)/mnt/system
 	${Q}cp -arf ${SYSTEM_OUT_DIR}/* $(BR_OVERLAY_DIR)/mnt/system/
+	${Q}[ ! -e $(BR_PROJECT_OVERLAY_PATH)/mnt/system ] || cp -arf $(BR_PROJECT_OVERLAY_PATH)/mnt/system/* $(BR_OVERLAY_DIR)/mnt/system/
+	${Q}[ ! -e ${TPU_SDK_INSTALL_PATH} ] || mkdir -p $(BR_OVERLAY_DIR)/mnt/system/opt/cvitek_tpu_sdk/include
+	${Q}[ ! -e ${TPU_SDK_INSTALL_PATH} ] || mkdir -p $(BR_OVERLAY_DIR)/mnt/system/opt/cvitek_tpu_sdk/lib
+	${Q}[ ! -e ${TPU_SDK_INSTALL_PATH} ] || cp -arf ${TPU_SDK_INSTALL_PATH}/include/* $(BR_OVERLAY_DIR)/mnt/system/opt/cvitek_tpu_sdk/include/
+	${Q}[ ! -e ${TPU_SDK_INSTALL_PATH} ] || cp -arf ${TPU_SDK_INSTALL_PATH}/lib/* $(BR_OVERLAY_DIR)/mnt/system/opt/cvitek_tpu_sdk/lib/
 	# copy usr/share/fw_vcodec
 	${Q}mkdir -p $(BR_OVERLAY_DIR)/usr/share
 	${Q}cp -rf $(RAMDISK_PATH)/rootfs/$(ROOTFS_BASE)/usr/share/fw_vcodec $(BR_OVERLAY_DIR)/usr/share
@@ -639,67 +570,72 @@ br-rootfs-prepare:
 	${Q}find $(BR_OVERLAY_DIR) -executable -type f ! -name "*.sh" ! -path "*etc*" ! -path "*.ko" -printf 'striping %p\n' -exec $(CROSS_COMPILE_SDK)strip --strip-all {} 2>/dev/null \;
 
 
-br-rootfs-pack:export TARGET_OUTPUT_DIR=$(BR_DIR)/output/$(BR_BOARD)
-br-rootfs-pack:
+br-source-config:export TARGET_OUTPUT_DIR=$(BR_OUTPUT_DIR)
+br-source-config:
 	$(call print_target)
 	${Q}$(MAKE) -C $(BR_DIR) $(BR_DEFCONFIG) BR2_TOOLCHAIN_EXTERNAL_PATH=$(CROSS_COMPILE_PATH)
+	${Q}$(MAKE) -j${NPROC} -C $(BR_DIR) source
+
+$(BR_OUTPUT_DIR)/host/bin/genimage:export TARGET_OUTPUT_DIR=$(BR_OUTPUT_DIR)
+$(BR_OUTPUT_DIR)/host/bin/genimage:
+	${Q}$(MAKE) br-rootfs-prepare
+	${Q}$(MAKE) br-source-config
+	${Q}$(MAKE) -j${NPROC} -C $(BR_DIR) host-finalize
+
+br-host-build: $(BR_OUTPUT_DIR)/host/bin/genimage
+	$(call print_target)
+
+br-target-build:export TARGET_OUTPUT_DIR=$(BR_OUTPUT_DIR)
+br-target-build: br-source-config
+	$(call print_target)
+	${Q}$(MAKE) -j${NPROC} -C $(BR_DIR) target-finalize
+
+br-rootfs-pack:export TARGET_OUTPUT_DIR=$(BR_OUTPUT_DIR)
+br-rootfs-pack: br-source-config
+	$(call print_target)
 	${Q}$(MAKE) -j${NPROC} -C $(BR_DIR)
 	# ${Q}rm -rf $(BR_ROOTFS_DIR)/*
-	# copy rootfs to rawimg dir
-	${Q}cp $(TARGET_OUTPUT_DIR)/images/rootfs.ext4 $(OUTPUT_DIR)/rawimages/rootfs.$(STORAGE_TYPE)
-ifeq ($(CONFIG_SUP_LARGE_PART_SIZE),y)
-	$(call raw2cimg_lps ,rootfs.$(STORAGE_TYPE))
-else
+	# move rootfs to rawimg dir
+	if readlink -q $(BR_OUTPUT_DIR)/images/rootfs.ext4 ; then \
+		cd $(BR_OUTPUT_DIR)/images/ ; mv `readlink rootfs.ext4` $(OUTPUT_DIR)/rawimages/rootfs.$(STORAGE_TYPE) ; \
+	else \
+		mv $(BR_OUTPUT_DIR)/images/rootfs.ext4 $(OUTPUT_DIR)/rawimages/rootfs.$(STORAGE_TYPE) ; \
+	fi
+	${Q}rm -f $(BR_OUTPUT_DIR)/images/rootfs.ext?
+	${Q}tar zcvf $(OUTPUT_DIR)/licheervnano-drivers.tar.gz $(BR_OUTPUT_DIR)/target/mnt
 	$(call raw2cimg ,rootfs.$(STORAGE_TYPE))
-endif
 
-# TODO A/B boot is currently not supported when CONFIG_BUILDROOT_FS is enabled
 ifeq ($(CONFIG_BUILDROOT_FS),y)
+hostbin:br-host-build
 rootfs:br-rootfs-prepare
 rootfs:br-rootfs-pack
 else
+hostbin:
+	$(call print_target)
+
 rootfs:rootfs-pack
 rootfs:
 	$(call print_target)
 ifneq ($(STORAGE_TYPE), sd)
-ifeq ($(CONFIG_AB_SYSTEM),y)
-	${Q}cp $(OUTPUT_DIR)/rawimages/rootfs.$(STORAGE_TYPE) $(OUTPUT_DIR)/rawimages/rootfs_b.$(STORAGE_TYPE)
-ifeq ($(CONFIG_SUP_LARGE_PART_SIZE),y)
-	$(call raw2cimg_lps ,rootfs_b.$(STORAGE_TYPE))
-else
-	$(call raw2cimg ,rootfs_b.$(STORAGE_TYPE))
-endif # CONFIG_SUP_LARGE_PART_SIZE
-endif # CONFIG_AB_SYSTEM
-ifeq ($(CONFIG_SUP_LARGE_PART_SIZE),y)
-	$(call raw2cimg_lps ,rootfs.$(STORAGE_TYPE))
-else
 	$(call raw2cimg ,rootfs.$(STORAGE_TYPE))
-endif # CONFIG_SUP_LARGE_PART_SIZE
-endif # CONFIG_AB_SYSTEM
-endif # CONFIG_BUILDROOT_FS
+endif
+endif
 
-data:
+$(BR_OUTPUT_DIR)/host/sbin/mke2fs: hostbin
+
+$(BR_OUTPUT_DIR)/host/sbin/mkfs.jffs2: hostbin
+
+jffs2: $(BR_OUTPUT_DIR)/host/sbin/mkfs.jffs2
 	$(call print_target)
 ifeq ($(STORAGE_TYPE),spinor)
-	chmod 777 $(COMMON_TOOLS_PATH)/mkfs.jffs2
+	#chmod 777 $(BR_OUTPUT_DIR)/host/sbin/mkfs.jffs2
 ifeq (${CONFIG_USE_4K_ERASE_SIZE_FOR_JFFS2},y)
-	${Q}$(COMMON_TOOLS_PATH)/mkfs.jffs2 -d $(OUTPUT_DIR)/data -l -e 0x1000 --squash -o $(OUTPUT_DIR)/rawimages/data.spinor
+	${Q}$(BR_OUTPUT_DIR)/host/sbin/mkfs.jffs2 -d $(OUTPUT_DIR)/data -l -e 0x1000 --squash -o $(OUTPUT_DIR)/rawimages/data.spinor
 else
-	${Q}$(COMMON_TOOLS_PATH)/mkfs.jffs2 -d $(OUTPUT_DIR)/data -l -e 0x10000 --squash -o $(OUTPUT_DIR)/rawimages/data.spinor
+	${Q}$(BR_OUTPUT_DIR)/host/sbin/mkfs.jffs2 -d $(OUTPUT_DIR)/data -l -e 0x10000 --squash -o $(OUTPUT_DIR)/rawimages/data.spinor
 endif
-else ifeq (${STORAGE_TYPE},spinand)
-	$(call pack_image,data,$(OUTPUT_DIR)/data/,40M)
-else ifeq (${STORAGE_TYPE},emmc)
-	$(call pack_image,data,$(OUTPUT_DIR)/data/,72M)
-else ifeq (${STORAGE_TYPE},sd)
-	$(call pack_image,data,$(OUTPUT_DIR)/data/,72M)
-endif
-ifeq ($(CONFIG_SUP_LARGE_PART_SIZE),y)
-	$(call raw2cimg_lps,data.$(STORAGE_TYPE))
-else
 	$(call raw2cimg ,data.$(STORAGE_TYPE))
 endif
-
 
 rootfs-clean:
 	$(call print_target)
@@ -709,25 +645,45 @@ rootfs-clean:
 $(OUTPUT_DIR)/system:
 	${Q}mkdir -p $@
 
+# Pack_image
+# Description: Macro for packing image
+# Parameters 1: partition label
+# Parameters 2: Folder path for pack
+# Parameters 3: Size for packing (for make_ext4fs)
+ifeq (${STORAGE_TYPE},spinand)
+define pack_image
+	${Q}python3 $(COMMON_TOOLS_PATH)/spinand_tool/mkubiimg.py $(FLASH_PARTITION_XML) $(shell echo ${1} | tr  '[:lower:]' '[:upper:]') ${2} $(OUTPUT_DIR)/rawimages/${1}.spinand -b $(CONFIG_NANDFLASH_BLOCKSIZE) -p $(CONFIG_NANDFLASH_PAGESIZE) --mkfs $(BR_OUTPUT_DIR)/host/sbin/mkfs.ubifs --ubinize $(BR_OUTPUT_DIR)/host/sbin/ubinize
+endef
+else ifeq (${STORAGE_TYPE},emmc)
+define pack_image
+	${Q}$(BR_OUTPUT_DIR)/host/bin/make_ext4fs -l ${3}  -L $(shell echo ${1} | tr  '[:lower:]' '[:upper:]') $(OUTPUT_DIR)/rawimages/${1}.emmc ${2}
+	resize2fs -M $(OUTPUT_DIR)/rawimages/${1}.emmc
+endef
+else ifeq (${STORAGE_TYPE},spinor)
+# TODO:
+define pack_image
+endef
+else
+define pack_image
+	$(error Unknown STORAGE_TYPE ${STORAGE_TYPE})
+endef
+endif
+
 $(OUTPUT_DIR)/rawimages/system.$(STORAGE_TYPE):$(OUTPUT_DIR)/system
 	$(call pack_image,system,$(OUTPUT_DIR)/system,38M)
 
 system:$(OUTPUT_DIR)/rawimages/system.$(STORAGE_TYPE)
 system:
 	$(call print_target)
-ifeq ($(CONFIG_SUP_LARGE_PART_SIZE),y)
-	$(call raw2cimg_lps,system.$(STORAGE_TYPE))
-else
 	$(call raw2cimg ,system.$(STORAGE_TYPE))
-endif
 
 $(ROOTFS_DIR)/mnt/cfg:
 	${Q}mkdir -p $@
 
-$(ROOTFS_DIR)/mnt/cfg/secure.img:$(ROOTFS_DIR)/mnt/cfg
+$(ROOTFS_DIR)/mnt/cfg/secure.img:$(ROOTFS_DIR)/mnt/cfg $(BR_OUTPUT_DIR)/host/sbin/mke2fs
 	# Create image for encrypting.
 	${Q}dd if=/dev/zero of=$(ROOTFS_DIR)/mnt/cfg/secure.img bs=5M count=1
-	$(TOOLS_PATH)/common/prebuild/mke2fs -T ext4 -O encrypt $(ROOTFS_DIR)/mnt/cfg/secure.img
+	$(BR_OUTPUT_DIR)/host/sbin/mke2fs -T ext4 -O encrypt $(ROOTFS_DIR)/mnt/cfg/secure.img
 
 cfg-build:$(ROOTFS_DIR)/mnt/cfg/secure.img
 cfg-build:
@@ -736,11 +692,6 @@ cfg-build:
 
 cfg:cfg-build
 	$(call print_target)
-ifeq ($(CONFIG_SUP_LARGE_PART_SIZE),y)
-	$(call raw2cimg_lps,cfg.$(STORAGE_TYPE))
-else
 	$(call raw2cimg ,cfg.$(STORAGE_TYPE))
-endif
 
 -include riscv.mk
--include alios.mk

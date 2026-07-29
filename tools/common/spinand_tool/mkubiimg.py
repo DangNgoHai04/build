@@ -141,16 +141,11 @@ def create_ubifs(
             shell=True,
         )
     except Exception:
-        return [-1, tmp_ubifs]
-    output = b""
-    if process.stdout is not None:
-        output = process.stdout.read()
+        return -1
+    if verbose:
+        with process.stdout:
+            log_subprocess_output(process.stdout)
     ret = process.wait()
-    if verbose and output:
-        for line in output.splitlines():
-            logging.debug("got line from subprocess: %r", line + b"\n")
-    elif ret and output:
-        logging.error("mkfs.ubifs output:\n%s", output.decode("utf-8", errors="replace"))
     return [ret, tmp_ubifs]
 
 
@@ -169,15 +164,10 @@ def create_ubi(img_path, cfg_path, output, pagesize, pebsize, ubinize, verbose=F
         )
     except Exception:
         return -1
-    output = b""
-    if process.stdout is not None:
-        output = process.stdout.read()
+    if verbose:
+        with process.stdout:
+            log_subprocess_output(process.stdout)
     ret = process.wait()
-    if verbose and output:
-        for line in output.splitlines():
-            logging.debug("got line from subprocess: %r", line + b"\n")
-    elif ret and output:
-        logging.error("ubinize output:\n%s", output.decode("utf-8", errors="replace"))
     return ret
 
 
@@ -196,10 +186,8 @@ def main():
         part_size = part["part_size"]
         label = part["label"]
     except Exception:
-        logging.warning(
-            "label %s is not found in partition.xml, skip packing.", args.label
-        )
-        return 0
+        logging.error("label is not found in partition.xml, please check!")
+        return -1
     logging.debug("get partition as below:")
     logging.debug(p)
     pagesize = XmlParser.parse_size(args.pagesize)
@@ -290,4 +278,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
