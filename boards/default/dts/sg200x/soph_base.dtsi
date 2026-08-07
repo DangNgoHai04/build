@@ -156,21 +156,21 @@
 		compatible = "cvitek,cvi-pwm";
 		reg = <0x0 0x3060000 0x0 0x1000>;
 		clocks = <&clk CV181X_CLK_PWM>;
-		#pwm-cells = <1>;
+		#pwm-cells = <4>;
 	};
 
 	pwm1: pwm@3061000 {
 		compatible = "cvitek,cvi-pwm";
 		reg = <0x0 0x3061000 0x0 0x1000>;
 		clocks = <&clk CV181X_CLK_PWM>;
-		#pwm-cells = <2>;
+		#pwm-cells = <4>;
 	};
 
 	pwm2: pwm@3062000 {
 		compatible = "cvitek,cvi-pwm";
 		reg = <0x0 0x3062000 0x0 0x1000>;
 		clocks = <&clk CV181X_CLK_PWM>;
-		#pwm-cells = <3>;
+		#pwm-cells = <4>;
 	};
 
 	pwm3: pwm@3063000 {
@@ -233,6 +233,7 @@
 		clocks = <&clk CV181X_CLK_SPI>;
 		#address-cells = <1>;
 		#size-cells = <0>;
+		bias-pull-up;
 	};
 
 	spi3:spi3@041B0000 {
@@ -653,7 +654,7 @@
 		cvi,card_name = "cv182x_internal_PDM";
 	};
 
-	wifi_pin {
+	wifi_pin: wifi_pin {
 		compatible = "cvitek,wifi-pin";
 		poweron-gpio = <&porta 18 GPIO_ACTIVE_HIGH>;
 		wakeup-gpio = <&porte 7 GPIO_ACTIVE_HIGH>;
@@ -737,7 +738,7 @@
 		reg-names = "ive_base";
 	};
 
-	vo {
+	cvi_vo: vo: vo {
 		compatible = "cvitek,vo";
 		reg = <0x0 0x0a080000 0x0 0x10000>, <0x0 0x0a0c8000 0x0 0xa0>, <0x0 0x0a0d1000 0x0 0x100>;
 		reg-names = "sc", "vip_sys", "dphy";
@@ -760,7 +761,7 @@
 		};
 	};
 
-	cvifb {
+	cvi_fb: cvifb {
 		compatible = "cvitek,fb";
 		memory-region = <&fb_reserved>;
 		reg = <0x0 0x0a088000 0x0 0x1000>;
@@ -865,13 +866,13 @@
 
 			trips {
 				soc_thermal_trip_0: soc_thermal_trip_0 {
-					temperature = <100000>; /* millicelsius */
+					temperature = <110000>; /* millicelsius */
 					hysteresis = <5000>; /* millicelsius */
 					type = "passive";
 				};
 
 				soc_thermal_trip_1: soc_thermal_trip_1 {
-					temperature = <110000>; /* millicelsius */
+					temperature = <120000>; /* millicelsius */
 					hysteresis = <5000>; /* millicelsius */
 					type = "passive";
 				};

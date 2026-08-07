@@ -36,7 +36,7 @@ function create_ramdisk_folder
 
   CHIP_FOLDER_PATH="$RAMDISK_PATH/rootfs/overlay/$CHIP"
   CUST_FOLDER_PATH="$RAMDISK_PATH/rootfs/overlay/$CUST_FOLDER_NAME"
-  SDK_VER_FOLDER_PATH="$RAMDISK_PATH/rootfs/overlay/${CHIP_ARCH_LOWER}_${SDK_VER}"
+  SDK_VER_FOLDER_PATH="$RAMDISK_PATH/rootfs/overlay/${SDK_VER}"
 
   pushd "$BUILD_PATH"
   export RAMDISK_OUTPUT_BASE CHIP_FOLDER_PATH CUST_FOLDER_PATH SDK_VER_FOLDER_PATH
@@ -75,9 +75,10 @@ function build_ramboot
 {(
   print_notice "Run ${FUNCNAME[0]}() function"
   create_ramdisk_folder || return "$?"
+  _build_uboot_env
   _build_kernel_env
   cd "$BUILD_PATH" || return
-  make ramboot
+  make ramboot || return "$?"
 )}
 
 function pack_boot
@@ -87,6 +88,7 @@ function pack_boot
 
   pushd "$RAMDISK_PATH"/"$RAMDISK_OUTPUT_FOLDER"
 
+  _build_uboot_env
   _build_kernel_env
   pushd "$BUILD_PATH"
   make boot || return "$?"
@@ -112,7 +114,7 @@ function pack_rootfs
   CHIP_ARCH_LOWER=$(echo "${CHIP_ARCH}" | tr A-Z a-z)
   CUST_FOLDER_NAME="$PROJECT_FULLNAME"
   CHIP_FOLDER_PATH="$RAMDISK_PATH"/rootfs/overlay/"$CHIP"
-  SDK_VER_FOLDER_PATH="$RAMDISK_PATH"/rootfs/overlay/"${CHIP_ARCH_LOWER}_${SDK_VER}"
+  SDK_VER_FOLDER_PATH="$RAMDISK_PATH"/rootfs/overlay/"${SDK_VER}"
   CUST_FOLDER_PATH="$RAMDISK_PATH"/rootfs/overlay/"$CUST_FOLDER_NAME"
   echo "CUST_FOLDER_NAME = ${CUST_FOLDER_NAME}"
   echo "CHIP_FOLDER_PATH = ${CHIP_FOLDER_PATH}"
@@ -123,7 +125,7 @@ function pack_rootfs
   export CHIP_FOLDER_PATH SDK_VER_FOLDER_PATH CUST_FOLDER_PATH
 
   cd "$BUILD_PATH" || return
-  make rootfs
+  make rootfs || return "$?"
 )}
 
 function pack_data
@@ -135,7 +137,7 @@ function pack_data
   mkdir -p "$OUTPUT_DIR"/data
   pushd "$OUTPUT_DIR"/data;echo "If you can dream it, you can do it." > sample;popd
   cd "$BUILD_PATH" || return
-  make jffs2
+  make jffs2 || return "$?"
 )}
 
 function clean_rootfs
@@ -154,7 +156,7 @@ function pack_system
 
   cd "$BUILD_PATH" || return
   if [ "$STORAGE_TYPE" == "emmc" ] || [ "$STORAGE_TYPE" == "spinor" ] || [ "$STORAGE_TYPE" == "spinand" ]; then
-    make system
+    make system || return "$?"
   fi
 )}
 
@@ -167,6 +169,7 @@ function pack_gpt
   pushd "$EMMCTOOL_PATH"
   mkdir -p "$OUTPUT_DIR"/rawimages
   make gpt.img PARTITION_XML="$FLASH_PARTITION_XML" INSTALL_DIR="$OUTPUT_DIR"/rawimages
+  test "$?" -eq 0 || return 1
   python3 "$IMGTOOL_PATH"/raw2cimg.py "$OUTPUT_DIR"/rawimages/gpt.img "$OUTPUT_DIR" "$FLASH_PARTITION_XML"
   popd
 )}
@@ -187,9 +190,24 @@ function pack_cfg
 
   cd "$BUILD_PATH" || return
   if [ $STORAGE_TYPE != "sd" ]; then
-    make cfg
+    make cfg || return "$?"
   fi
 )}
+
+function copy_tools
+{(
+  # Copy USB_DL, partition.xml and bootlogo
+  if [[ "${chip_cv[*]}" =~ "$CHIP" ]] && [[ ${BOARD} != "fpga" &&  ${BOARD} != "palladium" ]]; then
+    command rm -rf "$OUTPUT_DIR"/tools
+    command mkdir -p "$OUTPUT_DIR"/tools/
+    command cp -rf "$TOOLS_PATH"/common/usb_dl/ "$OUTPUT_DIR"/tools/
+    if [ "$ENABLE_BOOTLOGO" -eq 1 ];then
+      python3 "$IMGTOOL_PATH"/raw2cimg.py "$BOOTLOGO_PATH" "$OUTPUT_DIR" "$FLASH_PARTITION_XML"
+    fi
+    command cp --remove-destination "$FLASH_PARTITION_XML" "$OUTPUT_DIR"/
+  fi
+)}
+
 
 function pack_upgrade
 {(
@@ -234,17 +252,33 @@ function pack_burn_image
 {(
   pushd "$OUTPUT_DIR"
   [ -d tmp ] && rm -rf tmp
-  [ -d br-rootfs ] && rm -rf br-rootfs && mkdir br-rootfs
-  tar xf $BR_DIR/output/$BR_BOARD/images/rootfs.tar.xz -C br-rootfs
 
-  # genimage
+  # # genimage
+  export PATH="$BR_OUTPUT_DIR"/host/bin:"$BR_OUTPUT_DIR"/host/sbin:${PATH}
   export PATH=${TOP_DIR}/build/tools/common/sd_tools:${PATH}
   export LD_LIBRARY_PATH=$TOP_DIR/build/tools/common/sd_tools/libconfuse/lib:${LD_LIBRARY_PATH}
+  $COMMON_TOOLS_PATH/sd_tools/sd_gen_burn_image_rootless.sh $OUTPUT_DIR
+  popd
+)}
 
-  image=sophpi-duo-`date +%Y%m%d-%H%M`.img
-  cp $COMMON_TOOLS_PATH/sd_tools/genimage.cfg $COMMON_TOOLS_PATH/sd_tools/genimage.cfg.tmp
-  sed -i 's/sophpi-duo.img/'"$image"'/' $COMMON_TOOLS_PATH/sd_tools/genimage.cfg.tmp
-  genimage --config $COMMON_TOOLS_PATH/sd_tools/genimage.cfg.tmp  --rootpath $OUTPUT_DIR/br-rootfs --inputpath $OUTPUT_DIR --outputpath $OUTPUT_DIR
+function pack_usbdl_image
+{(
+  pushd "$OUTPUT_DIR"
+  [ -d tmp ] && rm -rf tmp
+  set -eux
+  cp -rf $TOOLS_PATH/cv181x/usb_dl $OUTPUT_DIR
+  cd usb_dl
+  unzip -o $OUTPUT_DIR/upgrade.zip
+  cp $OUTPUT_DIR/fip.bin ./
+  set +eux
+  echo "========================================="
+  echo ""
+  echo "usb flash command:"
+  echo ""
+  echo "cd $OUTPUT_DIR/usb_dl && python3 cv181x_dl.py"
+  echo ""
+  echo ""
+  echo "========================================="
 
   popd
 )}
@@ -257,7 +291,7 @@ function pack_prog_img
   rm -rf "${tmp_dir:?}/"*
   if [[ "$STORAGE_TYPE" = "spinand" ]]; then
     pushd "$SPINANDTOOL_PATH"/sv_tool
-    make
+    make || return "$?"
     ./create_sv -c 5 -o "$tmp_dir"/sv.bin
     popd
     cp "$OUTPUT_DIR"/rawimages/*."$STORAGE_TYPE" "$tmp_dir"

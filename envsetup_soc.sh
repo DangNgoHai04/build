@@ -1,4 +1,10 @@
 #!/bin/bash
+
+if [ -z "${ENABLE_BOOTLOGO}" ]
+then
+    export ENABLE_BOOTLOGO=1 # enable uboot lcd init
+fi
+
 function _build_default_env()
 {
   # Please keep these default value!!!
@@ -11,7 +17,6 @@ function _build_default_env()
   COMPRESSOR=${COMPRESSOR:-xz}
   COMPRESSOR_UBOOT=${COMPRESSOR_UBOOT:-lzma} # or none to disable
   MULTI_PROCESS_SUPPORT=${MULTI_PROCESS_SUPPORT:-0}
-  ENABLE_BOOTLOGO=${ENABLE_BOOTLOGO:-0}
   TPU_REL=${TPU_REL:-0} # TPU release build
   SENSOR=${SENSOR:-sony_imx327}
 }
@@ -54,7 +59,7 @@ function build_fsbl()
   _build_uboot_env
   _build_opensbi_env
   cd "$BUILD_PATH" || return
-  make fsbl-build
+  make fsbl-build || return "$?"
 )}
 
 function clean_fsbl()
@@ -75,7 +80,7 @@ function build_atf()
   print_notice "Run ${FUNCNAME[0]}() function"
   _build_atf_env
   cd "$BUILD_PATH" || return
-  make arm-trusted-firmware
+  make arm-trusted-firmware || return "$?"
 )}
 
 function clean_atf()
@@ -100,14 +105,14 @@ function build_fip_pre()
   print_notice "Run ${FUNCNAME[0]}() function"
   _build_uboot_env
   cd "$BUILD_PATH" || return
-  make fip-pre-merge
+  make fip-pre-merge || return "$?"
 )}
 
 function build_rtos()
 {(
   print_notice "Run ${FUNCNAME[0]}() function"
   cd "$BUILD_PATH" || return
-  make rtos
+  make rtos || return "$?"
 )}
 
 function clean_rtos()
@@ -129,7 +134,7 @@ function _link_uboot_logo()
 {(
   print_notice "Run ${FUNCNAME[0]}() function"
   cd "$BUILD_PATH" || return
-  if [[ x"${PANEL_TUNING_PARAM}" = x"I80_panel_st7789v" ]]; then
+  if [[ x"${PANEL_TUNING_PARAM}" =~ x"I80" ]]; then
     ln -sf "$COMMON_TOOLS_PATH"/bootlogo/logo_320x240.BMP "$COMMON_TOOLS_PATH"/bootlogo/logo.jpg
   fi
 )}
@@ -141,7 +146,7 @@ function build_uboot()
   _build_opensbi_env
   _link_uboot_logo
   cd "$BUILD_PATH" || return
-  make u-boot
+  make u-boot || return "$?"
 )}
 
 function build_uboot_env_tools()
@@ -149,7 +154,7 @@ function build_uboot_env_tools()
   print_notice "Run ${FUNCNAME[0]}() function"
   _build_uboot_env
   cd "$BUILD_PATH" || return
-  make u-boot-env-tools
+  make u-boot-env-tools || return "$?"
 )}
 
 function clean_uboot()
@@ -207,7 +212,7 @@ function build_bld()
 {(
   print_notice "Run ${FUNCNAME[0]}() function"
   cd "$BUILD_PATH" || return
-  make bld
+  make bld || return "$?"
 )}
 
 function clean_bld()
@@ -228,12 +233,12 @@ function build_middleware()
   _build_middleware_env
   cd "$BUILD_PATH" || return
 
-  make "$ROOTFS_DIR"
+  make "$ROOTFS_DIR" || return "$?"
 
   pushd "$MW_PATH"
-  make all -j$(nproc)
+  make all
   test $? -ne 0 && print_notice "build middleware failed !!" && popd && return 1
-  make install DESTDIR="$SYSTEM_OUT_DIR"
+  make install DESTDIR="$SYSTEM_OUT_DIR" || return "$?"
   popd
 
   # add sdk version
@@ -333,15 +338,16 @@ function build_sdk()
   CNV_SDK_INSTALL_PATH="$CNV_SDK_INSTALL_PATH" \
   KERNEL_HEADER_PATH="$KERNEL_PATH"/"$KERNEL_OUTPUT_FOLDER"/usr/ \
       scripts/sdk_release.sh
-  test "$?" -ne 0 && print_notice "${FUNCNAME[0]}() failed !!" && popd return 1
+  test "$?" -ne 0 && print_notice "${FUNCNAME[0]}() failed !!" && popd && return 1
   popd
 
   # copy so
   cp -a "$SDK_INSTALL_PATH"/lib/*.so* "$SYSTEM_OUT_DIR"/lib/
   # copy sample_xxx
-  if [[ "$CHIP_ARCH" != CV180X ]] && [[ "$1" = ai ]]; then
+  if [[ "$1" = ai ]]; then
     mkdir -p "$SYSTEM_OUT_DIR"/usr/bin/"$1"
     cp -a "$SDK_INSTALL_PATH"/bin/sample_* "$SYSTEM_OUT_DIR"/usr/bin/"$1"
+    cp -a "${SDK_INSTALL_PATH}/sample/3rd/rtsp/lib/libcvi_rtsp.so" "$SYSTEM_OUT_DIR"/lib/
   fi
 }
 
@@ -362,14 +368,14 @@ function clean_sdk()
 
 function build_ive_sdk()
 {
-  if [[ "$CHIP_ARCH" != CV181X ]] ; then
-    build_sdk ive
+  if [[ "$CHIP_ARCH" != CV181X ]] && [[ "$CHIP_ARCH" != SG200X ]] ; then
+    build_sdk ive || return "$?"
   fi
 }
 
 function clean_ive_sdk()
 {
-  if [[ "$CHIP_ARCH" != CV181X ]] ; then
+  if [[ "$CHIP_ARCH" != CV181X ]] && [[ "$CHIP_ARCH" != SG200X ]] ; then
     clean_sdk ive
   fi
 }
@@ -377,7 +383,7 @@ function clean_ive_sdk()
 function build_ivs_sdk()
 {
   if [[ "$CHIP_ARCH" == CV182X ]] || [[ "$CHIP_ARCH" == CV183X ]]; then
-    build_sdk ivs
+    build_sdk ivs || return "$?"
   fi
 }
 
@@ -388,19 +394,64 @@ function clean_ivs_sdk()
   fi
 }
 
+function build_tdl_sdk()
+{
+  print_notice "Run ${FUNCNAME[0]}() function"
+  pushd "$AI_SDK_PATH"
+  AI_SDK_INSTALL_PATH="$AI_SDK_INSTALL_PATH" \
+  ./build_tdl_sdk.sh all
+  test "$?" -ne 0 && print_notice "${FUNCNAME[0]}() failed !!" && popd && return 1
+  popd
+
+  # copy so
+  cp -a "$AI_SDK_INSTALL_PATH"/lib/*.so* "$SYSTEM_OUT_DIR"/lib/
+  # copy sample_xxx
+  mkdir -p "$SYSTEM_OUT_DIR"/usr/bin/"ai"
+  cp -a "$AI_SDK_INSTALL_PATH"/bin/sample_* "$SYSTEM_OUT_DIR"/usr/bin/"ai"
+  cp -a "$AI_SDK_INSTALL_PATH"/bin/*/sample_* "$SYSTEM_OUT_DIR"/usr/bin/"ai"
+  cp -a "$AI_SDK_INSTALL_PATH"/_testing/sample_* "$SYSTEM_OUT_DIR"/usr/bin/"ai"
+  cp -a "$AI_SDK_INSTALL_PATH"/sample/3rd/libwebsockets/lib/*.so* "$SYSTEM_OUT_DIR"/lib/
+  cp -a "$AI_SDK_INSTALL_PATH"/sample/3rd/opencv/lib/*.so.* "$SYSTEM_OUT_DIR"/lib/
+  cp -a "$AI_SDK_INSTALL_PATH"/sample/3rd/openssl/lib/*.so* "$SYSTEM_OUT_DIR"/lib/
+  cp -a "$AI_SDK_INSTALL_PATH"/sample/utils/lib/*.so* "$SYSTEM_OUT_DIR"/lib/
+  cp -a "${AI_SDK_INSTALL_PATH}/sample/3rd/rtsp/lib/libcvi_rtsp.so" "$SYSTEM_OUT_DIR"/lib/
+  cp -a "${AI_SDK_INSTALL_PATH}/sample/cvi_rtsp/lib/libcvi_rtsp.so" "$SYSTEM_OUT_DIR"/lib/
+}
+
+function clean_tdl_sdk()
+{
+  print_notice "Run ${FUNCNAME[0]}() function"
+  pushd "$AI_SDK_PATH"
+  ./build_tdl_sdk.sh clean
+  popd
+
+  rm -rf "$AI_SDK_INSTALL_PATH"
+  rm -rf "$AI_SDK_PATH"/tmp/_deps
+
+  rm -rf "${SYSTEM_OUT_DIR:?}"/usr/bin/"ai"
+}
+
 function build_ai_sdk()
 {
-  build_sdk ai
+  if [ -e "$AI_SDK_PATH"/build_tdl_sdk.sh ]; then
+    build_tdl_sdk
+  else
+    build_sdk ai || return "$?"
+  fi
 }
 
 function clean_ai_sdk()
 {
+  if [ -e "$AI_SDK_PATH"/build_tdl_sdk.sh ]; then
+    clean_tdl_sdk
+  else
     clean_sdk ai
+  fi
 }
 
 function build_cnv_sdk()
 {
-  build_sdk cnv
+  build_sdk cnv || return "$?"
 }
 
 function clean_cnv_sdk()
@@ -413,7 +464,7 @@ function build_osdrv()
   print_notice "Run ${FUNCNAME[0]}() ${1} function"
 
   cd "$BUILD_PATH" || return
-  make "$ROOTFS_DIR"
+  make "$ROOTFS_DIR" || return "$?"
 
   local osdrv_target="$1"
   if [ -z "$osdrv_target" ]; then
@@ -449,6 +500,7 @@ function build_cvi_pipeline()
   ./install_base_pkg.sh prebuilt "$(pwd)/install"
   ./download_models.sh "$(pwd)/install/cvi_models"
   make install DESTDIR="$(pwd)/install/system" LIBC_PATH="$TOOLCHAIN_PATH/gcc/gcc-linaro-6.3.1-2017.05-x86_64_arm-linux-gnueabihf/arm-linux-gnueabihf/libc/lib/"
+  test "$?" -eq 0 || return 1
   popd
 }
 
@@ -488,30 +540,19 @@ function clean_cvi_rtsp()
   BUILD_SERVICE=1 make clean
 )}
 
-function build_pqtool_server()
-{(
-  print_notice "Run ${FUNCNAME[0]}() function"
-  cd "$PQTOOL_SERVER_PATH" || return
-  make all SDK_VER="$SDK_VER" MULTI_PROCESS_SUPPORT="$MULTI_PROCESS_SUPPORT"
-  test "$?" -ne 0 && print_notice "build pqtool_server failed !!" && popd && return 1
-
-  if [[ "$FLASH_SIZE_SHRINK" != "y" ]]; then
-    make install DESTDIR="$SYSTEM_OUT_DIR"
-  fi
-)}
-
-function clean_pqtool_server()
-{(
-  print_notice "Run ${FUNCNAME[0]}() function"
-  cd "$PQTOOL_SERVER_PATH" || return
-  make clean
-  make uninstall DESTDIR="$SYSTEM_OUT_DIR"
-)}
-
 function build_3rd_party()
 {
+  if [ -e "${MW_PATH}/3rdparty/oss/run_build.sh" -a ! -e ${OSS_PATH}/run_build.sh ]; then
+    mkdir -p "${OSS_PATH}"
+    cp -p "${MW_PATH}/3rdparty/oss/run_build.sh" "${OSS_PATH}/"
+  fi
+  if [ -d "${MW_PATH}/3rdparty/oss/oss_release_tarball/${SDK_VER}" ]; then
+    mkdir -p "${OSS_PATH}/oss_release_tarball/${SDK_VER}"
+    cp -rpf "${MW_PATH}/3rdparty/oss/oss_release_tarball/${SDK_VER}"/*.tar.gz "${OSS_PATH}/oss_release_tarball/${SDK_VER}/"
+  fi
+
   mkdir -p "$OSS_TARBALL_PATH"
- 
+
   if [ -d "${OSS_PATH}/oss_release_tarball" ]; then
     echo "oss prebuilt tarball found!"
   else
@@ -521,26 +562,15 @@ function build_3rd_party()
   fi
   echo "cp -rpf ${OSS_PATH}/oss_release_tarball/${SDK_VER}/*  ${OSS_TARBALL_PATH}"
   cp -rpf ${OSS_PATH}/oss_release_tarball/${SDK_VER}/*  ${OSS_TARBALL_PATH}
- 
+
   local oss_list=(
-    "zlib"
-    "glog"
-    "flatbuffers"
-    "opencv"
     "live555"
-    "sqlite3"
-    "ffmpeg"
-    "thttpd"
-    "openssl"
-    "libwebsockets"
     "json-c"
-    "nanomsg"
     "miniz"
-    "uv"
     "cvi-json-c"
     "cvi-miniz"
   )
- 
+
   for name in "${oss_list[@]}"
   do
     if [ -f "${OSS_TARBALL_PATH}/${name}.tar.gz" ]; then
@@ -566,6 +596,69 @@ function clean_ramdisk()
   rm -rf "$ROOTFS_DIR"
 }
 
+function build_access_guard_turnkey_app()
+{(
+  if [[ -d "$ACCESSGUARD_PATH" ]] && [[ "$BUILD_TURNKEY_ACCESSGUARD" = "y" ]]; then
+    export SDK_PATH=$(pwd)
+    export TOOLCHAIN_PATH="$CROSS_COMPILE_PATH_64"/bin/
+    export TOOLCHAIN_PATH_32="$CROSS_COMPILE_PATH_32"/bin/
+    export SDK_INSTALL_PATH="$OUTPUT_DIR"
+    export KERNEL_INC="$KERNEL_PATH"/build/"$CHIP"_"$BOARD"/usr/include/
+    ln -sf "$SDK_INSTALL_PATH"/tpu_* "$SDK_INSTALL_PATH"/tpu
+    pushd "$ACCESSGUARD_PATH"
+      source build.sh
+      access_guard_build || return 1
+      access_guard_install || return 1
+      mkdir -p "$SYSTEM_OUT_DIR"/data
+      cp -a  ${ACCESSGUARD_PATH}/install "$SYSTEM_OUT_DIR"/data/
+    popd
+  fi
+)}
+
+function clean_access_guard_turnkey_app()
+{(
+  if [[ -d "$ACCESSGUARD_PATH" ]] && [[ "$BUILD_TURNKEY_ACCESSGUARD" = "y" ]]; then
+    export SDK_PATH=$(pwd)
+    export TOOLCHAIN_PATH="$CROSS_COMPILE_PATH_64"/bin/
+    export TOOLCHAIN_PATH_32="$CROSS_COMPILE_PATH_32"/bin/
+    export SDK_INSTALL_PATH="$OUTPUT_DIR"
+    export KERNEL_INC="$KERNEL_PATH"/build/"$CHIP"_"$BOARD"/usr/include/
+    pushd "$ACCESSGUARD_PATH"
+    source build.sh
+    access_guard_clean
+    popd
+  fi
+)}
+
+function build_ipc_app()
+{
+  print_notice "Run ${FUNCNAME[0]}() function"
+  if [[ -d "$IPC_APP_PATH" ]] && [[ "$BUILD_TURNKEY_IPC" = "y" ]]; then
+    pushd "$IPC_APP_PATH"
+        make clean; make; make ipc_install || return $?
+        if [[ -f "$OUTPUT_DIR"/ipc_install.tar.gz ]] ; then
+            rm "$OUTPUT_DIR"/ipc_install.tar.gz
+        fi
+        pushd install
+        tar -czvf "$OUTPUT_DIR"/ipc_install.tar.gz "${IPC_APP_PATH}"/install/ipc_install || return $?
+        popd
+    popd
+  fi
+}
+
+function clean_ipc_app()
+{
+  print_notice "Run ${FUNCNAME[0]}() function"
+  if [[ -d "$IPC_APP_PATH" ]] && [[ "$BUILD_TURNKEY_IPC" = "y" ]]; then
+    pushd "$IPC_APP_PATH"
+        make clean
+        if [[ -f "$OUTPUT_DIR"/ipc_install.tar.gz ]] ; then
+            rm "$OUTPUT_DIR"/ipc_install.tar.gz
+        fi
+    popd
+  fi
+}
+
 function prepare_git_hook()
 {
    print_notice "Run ${FUNCNAME[0]}() function"
@@ -587,16 +680,22 @@ function build_all()
   build_kernel || return $?
   build_ramboot || return $?
   build_osdrv || return $?
-  build_3rd_party || return $?
   build_middleware || return $?
+  build_3rd_party || return $?
   if [ "$TPU_REL" = 1 ]; then
     build_tpu_sdk || return $?
+    build_ive_sdk || return $?
+    build_ivs_sdk || return $?
+    build_ai_sdk  || return $?
   fi
   pack_cfg || return $?
   pack_rootfs || return $?
   pack_data || return $?
   pack_system || return $?
+  copy_tools || return $?
   pack_upgrade || return $?
+  pack_usbdl_image || return $?
+  pack_burn_image || return $?
 )}
 
 function clean_all()
@@ -615,6 +714,8 @@ function clean_all()
     clean_ai_sdk
     clean_cnv_sdk
   fi
+  clean_access_guard_turnkey_app
+  clean_ipc_app
   clean_middleware
   clean_osdrv
 }
@@ -690,25 +791,23 @@ function cvi_setup_env()
   # shellcheck disable=SC1090
   source <(echo "${_tmp}")
 
-  if [[ "$CHIP_ARCH" == "CV183X" ]];then
-  export  CVIARCH="CV183X"
-  fi
-  if [[ "$CHIP_ARCH" == "CV182X" ]];then
-  export  CVIARCH="CV182X"
+  if [[ "$CHIP_ARCH" == "SG200X" ]];then
+  export  CHIP_CODE="MARS"
+  export  CVIARCH="CV181X"
   fi
   if [[ "$CHIP_ARCH" == "CV181X" ]];then
+  export  CHIP_CODE="MARS"
   export  CVIARCH="CV181X"
   fi
   if [[ "$CHIP_ARCH" == "CV180X" ]];then
+  export  CHIP_CODE="PHOBOS"
   export  CVIARCH="CV180X"
-  fi
-  if [[ "$CHIP_ARCH" == "ATHENA2" ]];then
-  export  CVIARCH="ATHENA2"
   fi
 
   export BRAND BUILD_VERBOSE DEBUG PROJECT_FULLNAME
   export OUTPUT_DIR ATF_PATH BM_BLD_PATH OPENSBI_PATH UBOOT_PATH FREERTOS_PATH
   export KERNEL_PATH RAMDISK_PATH OSDRV_PATH TOOLS_PATH COMMON_TOOLS_PATH
+  export INTERDRV_PATH
 
   PROJECT_FULLNAME="$CHIP"_"$BOARD"
 
@@ -739,7 +838,9 @@ function cvi_setup_env()
   IVE_SDK_PATH="$TOP_DIR"/ive
   IVS_SDK_PATH="$TOP_DIR"/ivs
   CNV_SDK_PATH="$TOP_DIR"/cnv
-  AI_SDK_PATH="$TOP_DIR"/cviai
+  ACCESSGUARD_PATH="$TOP_DIR"/access-guard-turnkey
+  IPC_APP_PATH="$TOP_DIR"/framework/applications/ipc
+  AI_SDK_PATH="$TOP_DIR"/tdl_sdk
   CVI_PIPELINE_PATH="$TOP_DIR"/cvi_pipeline
   CVI_RTSP_PATH="$TOP_DIR"/cvi_rtsp
   OPENSBI_PATH="$TOP_DIR"/opensbi
@@ -752,6 +853,16 @@ function cvi_setup_env()
   ROOTFSTOOL_PATH="$COMMON_TOOLS_PATH"/rootfs_tool
   SPINANDTOOL_PATH="$COMMON_TOOLS_PATH"/spinand_tool
   BOOTLOGO_PATH="$COMMON_TOOLS_PATH"/bootlogo/logo.jpg
+
+  if [ -e "$TOP_DIR"/cvi_mpi/Makefile -a ! -e "$MW_PATH"/Makefile ]; then
+    MW_PATH="$TOP_DIR"/cvi_mpi
+  elif [ -e "$TOP_DIR"/middleware/Makefile -a ! -e "$MW_PATH"/Makefile ]; then
+    MW_PATH="$TOP_DIR"/middleware
+  fi
+  INTERDRV_PATH=${OSDRV_PATH}/interdrv/${MW_VER}
+  if [ -e ${OSDRV_PATH}/interdrv/include -a ! -e ${INTERDRV_PATH}/include ]; then
+    INTERDRV_PATH=${OSDRV_PATH}/interdrv
+  fi
 
   # subfolder path for buidling, chosen accroding to .gitignore rules
   UBOOT_OUTPUT_FOLDER=build/"$PROJECT_FULLNAME"
@@ -848,15 +959,24 @@ function cvi_setup_env()
       return 1
     fi
   fi
-
   export SYSTEM_OUT_DIR
+  export TPU_OUTPUT_PATH
   export CROSS_COMPILE_PATH
   # buildroot config
-  export BR_DIR="$TOP_DIR"/buildroot-2021.05
+  export BR_DIR="$TOP_DIR"/buildroot
   export BR_BOARD=cvitek_${CHIP_ARCH}_${SDK_VER}
+  export BR_OUTPUT_DIR=${BR_DIR}/output/${BR_BOARD}
   export BR_OVERLAY_DIR=${BR_DIR}/board/cvitek/${CHIP_ARCH}/overlay
   export BR_DEFCONFIG=${BR_BOARD}_defconfig
-  export BR_ROOTFS_DIR="$OUTPUT_DIR"/tmp-rootfs
+  echo "BR_DEFCONFIG: ${BR_DEFCONFIG}"
+
+  # u-boot config
+  export PROJECT_CONFIG_FULLNAME=${BRAND}_${PROJECT_FULLNAME}
+  UBOOT_DEFCONFIG="${BUILD_PATH}/boards/${CHIP_ARCH,,}/${PROJECT_FULLNAME}/u-boot/${PROJECT_CONFIG_FULLNAME}_defconfig"
+  if [ ! -e ${UBOOT_DEFCONFIG} ]; then
+    export PROJECT_CONFIG_FULLNAME=${PROJECT_FULLNAME}
+    UBOOT_DEFCONFIG="${BUILD_PATH}/boards/${CHIP_ARCH,,}/${PROJECT_FULLNAME}/u-boot/${PROJECT_CONFIG_FULLNAME}_defconfig"
+  fi
 }
 
 cvi_print_env()
@@ -901,11 +1021,7 @@ export TOP_DIR BUILD_PATH
 # import common functions
 # shellcheck source=./common_functions.sh
 source "$TOP_DIR/build/common_functions.sh"
-# shellcheck source=./release_functions.sh
-#source "$TOP_DIR/build/release_functions.sh"
 # shellcheck source=./riscv_functions.sh
 source "$TOP_DIR/build/riscv_functions.sh"
-# shellcheck source=./alios_functions.sh
-#source "$TOP_DIR/build/alios_functions.sh"
 
 print_usage
